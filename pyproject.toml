@@ -1,3 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "legallens"
+version = "1.0.0"
+description = "Evidence-first legal document navigator"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115.6",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.10.4",
+    "pydantic-settings>=2.7.1",
+    "python-multipart>=0.0.20",
+    "google-genai>=1.14.0",
+    "google-cloud-storage>=3.15.0",
+    "google-cloud-firestore>=2.32.0",
+    "google-cloud-documentai>=3.15.0",
+    "google-cloud-secret-manager>=2.30.0",
+    "google-cloud-logging>=3.16.3",
+    "PyMuPDF>=1.25.4",
+    "httpx>=0.28.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.8.6",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "api*"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
