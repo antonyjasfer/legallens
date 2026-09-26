@@ -5,6 +5,7 @@ answering with Google Gemini File API, and deterministic citation extraction
 mapped to the Evidence schema.
 """
 
+import asyncio
 import logging
 import re
 import time
@@ -22,6 +23,7 @@ logger = logging.getLogger("legallens.file_search")
 @dataclass
 class IndexedFile:
     """Metadata representing an uploaded and indexed file in Gemini File API."""
+
     name: str  # e.g., 'files/abc123xyz'
     uri: str
     display_name: str
@@ -33,11 +35,18 @@ class IndexedFile:
 @dataclass
 class FileQueryResult:
     """Result of querying Gemini with an indexed document."""
+
     answer_text: str
     support_status: SupportStatus
     evidence: list[Evidence] = field(default_factory=list)
     model_name: str = ""
     citations_count: int = 0
+
+
+# Bounded polling configuration for File Search indexing
+MAX_POLL_ATTEMPTS: int = 30  # Maximum number of polling iterations
+INITIAL_POLL_INTERVAL_S: float = 1.0  # Initial polling interval in seconds
+MAX_POLL_INTERVAL_S: float = 5.0  # Cap on exponential backoff interval
 
 
 class FileSearchService:
@@ -58,6 +67,7 @@ class FileSearchService:
 
         try:
             from google import genai
+
             self._client = genai.Client(api_key=api_key)
             return self._client
         except Exception as exc:
@@ -102,24 +112,40 @@ class FileSearchService:
                 file=str(path),
                 config=upload_config,
             )
-            logger.info("Uploaded to Gemini File API: %s (initial state: %s)", file_ref.name, file_ref.state)
+            logger.info(
+                "Uploaded to Gemini File API: %s (initial state: %s)", file_ref.name, file_ref.state
+            )
 
-            # Wait for file processing if needed
-            start_time = time.time()
+            # Wait for file processing with bounded polling and exponential backoff
             current_file = file_ref
-            while str(current_file.state).upper() in ("PROCESSING", "FILESTATE.PROCESSING"):
-                if time.time() - start_time > max_wait_seconds:
-                    logger.warning("File %s indexing timed out after %ds", file_ref.name, max_wait_seconds)
+            poll_interval = INITIAL_POLL_INTERVAL_S
+            for attempt in range(MAX_POLL_ATTEMPTS):
+                if str(current_file.state).upper() not in ("PROCESSING", "FILESTATE.PROCESSING"):
                     break
-                time.sleep(1.0)
+                time.sleep(min(poll_interval, MAX_POLL_INTERVAL_S))
+                poll_interval *= 1.5  # Gradual backoff
                 current_file = client.files.get(name=file_ref.name)
-                logger.debug("Polling file %s state: %s", file_ref.name, current_file.state)
+                logger.debug(
+                    "Polling file %s state: %s (attempt %d/%d)",
+                    file_ref.name,
+                    current_file.state,
+                    attempt + 1,
+                    MAX_POLL_ATTEMPTS,
+                )
+            else:
+                logger.warning(
+                    "File %s indexing timed out after %d poll attempts",
+                    file_ref.name,
+                    MAX_POLL_ATTEMPTS,
+                )
 
             final_state = str(current_file.state)
             if "FAILED" in final_state.upper():
                 raise FileSearchError(f"Gemini file indexing failed with state: {final_state}")
 
-            logger.info("Document %s is ready for query (state: %s)", current_file.name, final_state)
+            logger.info(
+                "Document %s is ready for query (state: %s)", current_file.name, final_state
+            )
             return IndexedFile(
                 name=current_file.name,
                 uri=getattr(current_file, "uri", ""),
@@ -175,6 +201,7 @@ class FileSearchService:
 
         try:
             from google.genai import types
+
             config = types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=0.1,  # Low temperature for strict factual adherence
@@ -201,7 +228,12 @@ class FileSearchService:
                 except Exception as exc:
                     last_exc = exc
                     code = getattr(exc, "code", None)
-                    logger.warning("Model %s failed (code=%s): %s; evaluating fallback...", m, code, type(exc).__name__)
+                    logger.warning(
+                        "Model %s failed (code=%s): %s; evaluating fallback...",
+                        m,
+                        code,
+                        type(exc).__name__,
+                    )
                     if code in (401, 403):
                         break
                     time.sleep(1.0)
@@ -228,7 +260,9 @@ class FileSearchService:
                 document_name=document_display_name,
             )
 
-            support_status = SupportStatus.SUPPORTED if evidence_items else SupportStatus.PARTIALLY_SUPPORTED
+            support_status = (
+                SupportStatus.SUPPORTED if evidence_items else SupportStatus.PARTIALLY_SUPPORTED
+            )
             return FileQueryResult(
                 answer_text=answer_text,
                 support_status=support_status,
@@ -261,7 +295,9 @@ class FileSearchService:
                 group_dict = match.groupdict()
                 page_str = group_dict.get("page")
                 page_num = int(page_str) if page_str and page_str.isdigit() else None
-                section_str = group_dict.get("section", "").strip() if group_dict.get("section") else None
+                section_str = (
+                    group_dict.get("section", "").strip() if group_dict.get("section") else None
+                )
                 excerpt = group_dict.get("excerpt", "").strip()
 
                 if (
@@ -295,6 +331,44 @@ class FileSearchService:
         except Exception as exc:
             logger.warning("Failed to delete file %s from Gemini File API: %s", file_name, exc)
             return False
+
+    # ── Async wrappers for blocking SDK operations ────────────────────────
+
+    async def async_upload_and_index(
+        self,
+        file_path: Path | str,
+        display_name: str,
+        mime_type: str = "application/pdf",
+        max_wait_seconds: int = 60,
+    ) -> IndexedFile:
+        """Non-blocking wrapper around upload_and_index for async endpoints."""
+        return await asyncio.to_thread(
+            self.upload_and_index,
+            file_path,
+            display_name,
+            mime_type,
+            max_wait_seconds,
+        )
+
+    async def async_query_indexed_document(
+        self,
+        file_name: str,
+        question: str,
+        document_display_name: str,
+        model_name: str | None = None,
+    ) -> FileQueryResult:
+        """Non-blocking wrapper around query_indexed_document for async endpoints."""
+        return await asyncio.to_thread(
+            self.query_indexed_document,
+            file_name,
+            question,
+            document_display_name,
+            model_name,
+        )
+
+    async def async_delete_indexed_file(self, file_name: str) -> bool:
+        """Non-blocking wrapper around delete_indexed_file."""
+        return await asyncio.to_thread(self.delete_indexed_file, file_name)
 
     def health_check(self) -> dict[str, Any]:
         """Check File Search API connectivity without creating persistent garbage."""

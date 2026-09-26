@@ -1,12 +1,13 @@
 """Production Acceptance Test for LegalLens on Vercel."""
 
 import json
+import os
 import sys
 from pathlib import Path
 
 import httpx
 
-BASE_URL = "https://legallens-gamma.vercel.app"
+BASE_URL = os.environ.get("BASE_URL", sys.argv[1] if len(sys.argv) > 1 else "https://legallens-gamma.vercel.app")
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
 
 

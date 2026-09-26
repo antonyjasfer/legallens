@@ -21,13 +21,14 @@ dependencies = [
     "google-cloud-secret-manager>=2.30.0",
     "google-cloud-logging>=3.16.3",
     "PyMuPDF>=1.25.4",
-    "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0",
+    "httpx>=0.28.1",
     "ruff>=0.8.6",
 ]
 

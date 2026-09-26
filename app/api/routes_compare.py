@@ -1,5 +1,6 @@
 """Document comparison route — structured change detection between two documents."""
 
+import asyncio
 import json
 import logging
 
@@ -64,10 +65,12 @@ async def compare_documents_endpoint(
                 detail=f"{label} does not appear to be a valid PDF.",
             )
 
-        safe_name = sanitize_filename(upload_file.filename or f"{label.lower().replace(' ', '_')}.pdf")
+        safe_name = sanitize_filename(
+            upload_file.filename or f"{label.lower().replace(' ', '_')}.pdf"
+        )
 
         try:
-            processed = extract_text_from_pdf(content, safe_name)
+            processed = await asyncio.to_thread(extract_text_from_pdf, content, safe_name)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Could not process {label}: {exc}")
 

@@ -46,7 +46,7 @@ async def ask_document_endpoint(request: AskRequest):
 
             fs_svc = FileSearchService()
             if fs_svc.settings.gemini_configured:
-                query_res = fs_svc.query_indexed_document(
+                query_res = await fs_svc.async_query_indexed_document(
                     file_name=fs_doc_name,
                     question=request.question,
                     document_display_name=doc.filename,

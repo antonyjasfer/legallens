@@ -3,6 +3,7 @@
 Handles PDF upload, validation, analysis, and meeting preparation.
 """
 
+import asyncio
 import json
 import logging
 import uuid
@@ -89,9 +90,9 @@ async def _validate_and_process_upload(file: UploadFile) -> tuple[ProcessedDocum
         logger.info("Document '%s' found in cache (hash=%s)", safe_name, doc_id[:12])
         return _document_cache[doc_id], doc_id, content
 
-    # Extract text
+    # Extract text (run in thread to avoid blocking event loop with PyMuPDF C I/O)
     try:
-        processed = extract_text_from_pdf(content, safe_name)
+        processed = await asyncio.to_thread(extract_text_from_pdf, content, safe_name)
     except DocumentProcessingError as exc:
         raise HTTPException(status_code=422, detail=exc.message)
 
@@ -135,7 +136,7 @@ async def analyze_document_endpoint(
     settings = get_settings()
     temp_path = settings.upload_dir / session_id / f"{doc_id}.pdf"
     temp_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path.write_bytes(raw_bytes)
+    await asyncio.to_thread(temp_path.write_bytes, raw_bytes)
 
     # Store in GCS
     gcs_svc = GCSService.get_instance()
@@ -155,27 +156,42 @@ async def analyze_document_endpoint(
     try:
         fs_svc = FileSearchService()
         if fs_svc.settings.gemini_configured and temp_path.exists():
-            indexed_file = fs_svc.upload_and_index(temp_path, display_name=processed_doc.filename)
+            indexed_file = await fs_svc.async_upload_and_index(
+                temp_path,
+                display_name=processed_doc.filename,
+            )
             file_search_doc_name = indexed_file.name
             logger.info("Indexed in Gemini File Search: %s", file_search_doc_name)
     except Exception as exc:
         logger.warning("Gemini File Search indexing skipped: %s", exc)
+    finally:
+        # Clean up temporary file after File Search indexing to prevent disk accumulation
+        try:
+            if temp_path.exists():
+                temp_path.unlink()
+                if temp_path.parent.exists() and not any(temp_path.parent.iterdir()):
+                    temp_path.parent.rmdir()
+        except OSError as exc:
+            logger.debug("Temp file cleanup: %s", exc)
 
     # Persist metadata to Firestore
     try:
         firestore_svc = FirestoreService.get_instance()
-        firestore_svc.save_document_metadata({
-            "document_id": doc_id,
-            "session_id": session_id,
-            "original_filename": processed_doc.filename,
-            "gcs_object": gcs_info.get("blob_path", ""),
-            "sha256": doc_id,
-            "mime_type": "application/pdf",
-            "file_search_document_name": file_search_doc_name or "",
-            "document_ai_used": processed_doc.metadata.get("source") == "Google Document AI Layout Parser",
-            "selected_concerns": concern_list,
-            "language": language,
-        })
+        firestore_svc.save_document_metadata(
+            {
+                "document_id": doc_id,
+                "session_id": session_id,
+                "original_filename": processed_doc.filename,
+                "gcs_object": gcs_info.get("blob_path", ""),
+                "sha256": doc_id,
+                "mime_type": "application/pdf",
+                "file_search_document_name": file_search_doc_name or "",
+                "document_ai_used": processed_doc.metadata.get("source")
+                == "Google Document AI Layout Parser",
+                "selected_concerns": concern_list,
+                "language": language,
+            }
+        )
     except Exception as exc:
         logger.warning("Firestore metadata persistence warning: %s", exc)
 

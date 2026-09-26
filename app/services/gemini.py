@@ -38,7 +38,9 @@ def _sanitize_error_for_user(exc: Exception) -> str:
     elif isinstance(exc, errors.ServerError):
         code = getattr(exc, "code", None) or getattr(exc, "status_code", 500)
         if code == 503:
-            return "Google AI service is currently experiencing high demand. Please try again shortly."
+            return (
+                "Google AI service is currently experiencing high demand. Please try again shortly."
+            )
         return "Google AI service encountered a temporary error. Please try again."
     return "AI service request failed. Please try again."
 
@@ -112,7 +114,15 @@ class GeminiService:
                     break
             except Exception as exc:
                 last_exc = exc
-                logger.warning("Gemini health check on %s failed: %s; trying fallback...", m, type(exc).__name__)
+                status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+                logger.warning(
+                    "Gemini health check on %s failed: %s; trying fallback...",
+                    m,
+                    type(exc).__name__,
+                )
+                # Stop all retries on non-retryable auth/config errors
+                if status_code in (401, 403):
+                    break
 
         latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
         if resp and resp.text:
@@ -191,7 +201,9 @@ class GeminiService:
                         text = text[:-3]
                     text = text.strip()
 
-                    logger.info("Structured response generated successfully using model=%s", current_model)
+                    logger.info(
+                        "Structured response generated successfully using model=%s", current_model
+                    )
                     return json.loads(text)
 
                 except GeminiNotConfiguredError:
@@ -211,7 +223,11 @@ class GeminiService:
                     )
                     # If quota exhausted (429) or persistent 503 on primary model, try next fallback model immediately
                     if status_code in (429, 503) and current_model != models_to_try[-1]:
-                        logger.info("Switching to fallback model due to status %s on %s", status_code, current_model)
+                        logger.info(
+                            "Switching to fallback model due to status %s on %s",
+                            status_code,
+                            current_model,
+                        )
                         break
                     # If unauthorized or leaked key, do not silently try fallbacks
                     if status_code in (401, 403):
@@ -223,6 +239,13 @@ class GeminiService:
                 except Exception as exc:
                     last_exc = exc
                     logger.error("Unexpected error in Gemini generation: %s", type(exc).__name__)
+                    break
+
+            if last_exc:
+                status_code = getattr(last_exc, "code", None) or getattr(
+                    last_exc, "status_code", None
+                )
+                if status_code in (401, 403):
                     break
 
         safe_msg = _sanitize_error_for_user(last_exc) if last_exc else "AI service request failed."
@@ -261,7 +284,10 @@ class GeminiService:
                     ),
                 )
                 if response and response.text:
-                    logger.info("Search-grounded response generated successfully using model=%s", current_model)
+                    logger.info(
+                        "Search-grounded response generated successfully using model=%s",
+                        current_model,
+                    )
                     break
             except GeminiNotConfiguredError:
                 raise
@@ -281,11 +307,19 @@ class GeminiService:
                 break
             except Exception as exc:
                 last_exc = exc
-                logger.warning("Google Search Grounding attempt on %s failed: %s", current_model, type(exc).__name__)
+                logger.warning(
+                    "Google Search Grounding attempt on %s failed: %s",
+                    current_model,
+                    type(exc).__name__,
+                )
                 break
 
         if not response or not response.text:
-            safe_msg = _sanitize_error_for_user(last_exc) if last_exc else "Google Search Grounding query failed."
+            safe_msg = (
+                _sanitize_error_for_user(last_exc)
+                if last_exc
+                else "Google Search Grounding query failed."
+            )
             raise GeminiAPIError(safe_msg) from last_exc
 
         citations: list[dict[str, Any]] = []
@@ -297,11 +331,13 @@ class GeminiService:
             if hasattr(metadata, "grounding_chunks") and metadata.grounding_chunks:
                 for chunk in metadata.grounding_chunks:
                     if hasattr(chunk, "web") and chunk.web:
-                        citations.append({
-                            "title": getattr(chunk.web, "title", "Web Source"),
-                            "url": getattr(chunk.web, "uri", ""),
-                            "source": "Google Search Grounding",
-                        })
+                        citations.append(
+                            {
+                                "title": getattr(chunk.web, "title", "Web Source"),
+                                "url": getattr(chunk.web, "uri", ""),
+                                "source": "Google Search Grounding",
+                            }
+                        )
 
         return {
             "context": context_text,
