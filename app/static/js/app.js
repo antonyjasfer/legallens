@@ -254,9 +254,9 @@ function renderHome() {
 
 function renderAnalyze() {
   const chipHtml = (chips) => chips.map(c => `
-    <button class="chip ${AppState.selectedConcerns.includes(c.id) ? 'selected' : ''}"
-            onclick="toggleConcern('${c.id}')" role="checkbox"
-            aria-checked="${AppState.selectedConcerns.includes(c.id)}"
+    <button type="button" class="chip ${AppState.selectedConcerns.includes(c.id) ? 'selected' : ''}"
+            onclick="toggleConcern('${c.id}')"
+            aria-pressed="${AppState.selectedConcerns.includes(c.id)}"
             id="chip-${c.id}">
       ${c.label}
     </button>
@@ -275,7 +275,7 @@ function renderAnalyze() {
              ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
              ondrop="handleDrop(event, 'A')" onclick="document.getElementById('file-upload-input').click()"
              role="button" tabindex="0" aria-label="Upload PDF document"
-             onkeydown="if(event.key==='Enter')document.getElementById('file-upload-input').click()">
+             onkeydown="handleUploadKeydown(event, 'file-upload-input')">
           <div class="upload-icon">📄</div>
           <p>${AppState.fileA ? '' : 'Drop your PDF here or click to upload'}</p>
           ${AppState.fileA ? `<div class="upload-filename">✅ ${escapeHtml(AppState.fileA.name)}</div>` : ''}
@@ -308,11 +308,19 @@ function renderAnalyze() {
       </div>
 
       <div class="section">
-        <label for="lang-select">Explanation Language</label>
-        <div class="lang-selector">
-          <button class="lang-btn ${AppState.language === 'en' ? 'active' : ''}" onclick="setLanguage('en')">English</button>
-          <button class="lang-btn ${AppState.language === 'ta' ? 'active' : ''}" onclick="setLanguage('ta')">தமிழ்</button>
-          <button class="lang-btn ${AppState.language === 'hi' ? 'active' : ''}" onclick="setLanguage('hi')">हिन्दी</button>
+        <div class="lang-selector" role="group" aria-labelledby="language-label">
+          <span id="language-label" style="display: block; font-weight: 500; margin-bottom: var(--space-xs);">Explanation Language</span>
+          <button type="button" class="lang-btn ${AppState.language === 'en' ? 'active' : ''}"
+                  aria-pressed="${AppState.language === 'en' ? 'true' : 'false'}"
+                  onclick="setLanguage('en')">English</button>
+          <button type="button" class="lang-btn ${AppState.language === 'ta' ? 'active' : ''}"
+                  aria-pressed="${AppState.language === 'ta' ? 'true' : 'false'}"
+                  lang="ta"
+                  onclick="setLanguage('ta')">தமிழ்</button>
+          <button type="button" class="lang-btn ${AppState.language === 'hi' ? 'active' : ''}"
+                  aria-pressed="${AppState.language === 'hi' ? 'true' : 'false'}"
+                  lang="hi"
+                  onclick="setLanguage('hi')">हिन्दी</button>
         </div>
       </div>
 
@@ -329,9 +337,10 @@ function renderAnalyze() {
 
 function renderCompare() {
   const chipHtml = (chips) => chips.map(c => `
-    <button class="chip ${AppState.selectedConcerns.includes(c.id) ? 'selected' : ''}"
-            onclick="toggleConcern('${c.id}')" role="checkbox"
-            aria-checked="${AppState.selectedConcerns.includes(c.id)}">
+    <button type="button" class="chip ${AppState.selectedConcerns.includes(c.id) ? 'selected' : ''}"
+            onclick="toggleConcern('${c.id}')"
+            aria-pressed="${AppState.selectedConcerns.includes(c.id)}"
+            id="chip-cmp-${c.id}">
       ${c.label}
     </button>
   `).join("");
@@ -346,7 +355,7 @@ function renderCompare() {
           <div class="upload-area ${AppState.fileA ? 'has-file' : ''}"
                onclick="document.getElementById('file-a-input').click()"
                role="button" tabindex="0" aria-label="Upload Document A"
-               onkeydown="if(event.key==='Enter')document.getElementById('file-a-input').click()">
+               onkeydown="handleUploadKeydown(event, 'file-a-input')">
             <div class="upload-icon">📄</div>
             ${AppState.fileA ? `<div class="upload-filename">✅ ${escapeHtml(AppState.fileA.name)}</div>` : '<p>Upload PDF A</p>'}
           </div>
@@ -358,7 +367,7 @@ function renderCompare() {
           <div class="upload-area ${AppState.fileB ? 'has-file' : ''}"
                onclick="document.getElementById('file-b-input').click()"
                role="button" tabindex="0" aria-label="Upload Document B"
-               onkeydown="if(event.key==='Enter')document.getElementById('file-b-input').click()">
+               onkeydown="handleUploadKeydown(event, 'file-b-input')">
             <div class="upload-icon">📄</div>
             ${AppState.fileB ? `<div class="upload-filename">✅ ${escapeHtml(AppState.fileB.name)}</div>` : '<p>Upload PDF B</p>'}
           </div>
@@ -724,19 +733,36 @@ function toggleConcern(id) {
   } else {
     AppState.selectedConcerns.splice(idx, 1);
   }
+  const isSelected = AppState.selectedConcerns.includes(id);
   // Re-render just the chip
   const chip = document.getElementById(`chip-${id}`);
   if (chip) {
-    chip.classList.toggle("selected");
-    chip.setAttribute("aria-checked", chip.classList.contains("selected").toString());
+    chip.classList.toggle("selected", isSelected);
+    chip.setAttribute("aria-pressed", isSelected.toString());
+  }
+  const chipCmp = document.getElementById(`chip-cmp-${id}`);
+  if (chipCmp) {
+    chipCmp.classList.toggle("selected", isSelected);
+    chipCmp.setAttribute("aria-pressed", isSelected.toString());
   }
 }
 
 function setLanguage(lang) {
   AppState.language = lang;
+  const langNames = { en: "English", ta: "தமிழ்", hi: "हिन्दी" };
   $$(".lang-btn").forEach(btn => {
-    btn.classList.toggle("active", btn.textContent.trim() === {en: "English", ta: "தமிழ்", hi: "हिन्दी"}[lang]);
+    const isActive = btn.textContent.trim() === langNames[lang];
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-pressed", isActive ? "true" : "false");
   });
+}
+
+function handleUploadKeydown(event, inputId) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    const input = document.getElementById(inputId);
+    if (input) input.click();
+  }
 }
 
 function handleFileSelect(event, slot) {

@@ -67,21 +67,56 @@ def test_dependencies_get_app_settings():
 
 
 def test_main_etag_304_and_cache_control():
-    """Test frontend ETag conditional matching and static cache headers."""
-    # First request gets 200 and an ETag
+    """Test frontend ETag cache reuse without MD5 recalculation, 304, and static cache semantics."""
+    from app.main import _html_cache
+
+    # First request populates cache
     res1 = client.get("/")
     assert res1.status_code == 200
     etag = res1.headers.get("etag")
     assert etag is not None
+    assert len(_html_cache) > 0
 
-    # Second request with If-None-Match gets 304
-    res2 = client.get("/", headers={"if-none-match": etag})
-    assert res2.status_code == 304
+    # Second request reuses cached entry without recalculating MD5
+    with patch("hashlib.md5") as mock_md5:
+        res2 = client.get("/", headers={"if-none-match": etag})
+        assert res2.status_code == 304
+        mock_md5.assert_not_called()
 
-    # Static CSS cache-control header
+    # Static CSS cache-control header has max-age but does NOT claim immutable
     res_css = client.get("/static/css/app.css")
     assert res_css.status_code == 200
-    assert "public, max-age=" in res_css.headers.get("cache-control", "")
+    cache_ctrl = res_css.headers.get("cache-control", "")
+    assert "public, max-age=" in cache_ctrl
+    assert "immutable" not in cache_ctrl
+
+
+def test_accessibility_semantics_and_css():
+    """Verify accessibility semantics in frontend and CSS rules."""
+    from pathlib import Path
+
+    js_code = (Path(__file__).parent.parent / "app" / "static" / "js" / "app.js").read_text(encoding="utf-8")
+    css_code = (Path(__file__).parent.parent / "app" / "static" / "css" / "app.css").read_text(encoding="utf-8")
+
+    # 1. Language selector has a valid accessible group label and role="group"
+    assert 'role="group"' in js_code
+    assert 'aria-labelledby="language-label"' in js_code
+    assert 'id="language-label"' in js_code
+
+    # 2. Language buttons expose selected state via aria-pressed
+    assert 'aria-pressed="${AppState.language === \'en\'' in js_code
+    assert "aria-pressed" in js_code
+
+    # 3. Upload keyboard handler supports Enter and Space
+    assert "handleUploadKeydown" in js_code
+    assert 'event.key === "Enter" || event.key === " "' in js_code
+
+    # 4. Focus visible rules exist
+    assert ":focus-visible" in css_code
+    assert ".upload-area:focus-visible" in css_code
+
+    # 5. Reduced motion preferences honored
+    assert "prefers-reduced-motion" in css_code
 
 
 @pytest.mark.asyncio

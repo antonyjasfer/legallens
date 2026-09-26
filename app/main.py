@@ -44,6 +44,10 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down %s", settings.app_name)
 
 
+# Cache the HTML content, its mtime, and its non-cryptographic ETag for HTTP efficiency
+_html_cache: dict[str, tuple[str, str, str]] = {}
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
@@ -85,10 +89,10 @@ def create_app() -> FastAPI:
             response.headers[header] = value
         response.headers["X-Request-ID"] = req_id
 
-        # Cache-Control for static assets (immutable content-hashed resources)
+        # Cache-Control for static assets
         path = request.url.path
         if path.startswith("/static/"):
-            response.headers["Cache-Control"] = "public, max-age=86400, immutable"
+            response.headers["Cache-Control"] = "public, max-age=86400"
         elif path == "/":
             response.headers["Cache-Control"] = "no-cache"
 
@@ -137,9 +141,6 @@ def create_app() -> FastAPI:
     # ── Serve Frontend ─────────────────────────────────────────────────────
     template_dir = Path(__file__).parent / "templates"
 
-    # Cache the HTML content and its ETag at module level for efficiency
-    _html_cache: dict[str, tuple[str, str]] = {}
-
     @app.get("/", response_class=HTMLResponse)
     async def serve_frontend(request: Request):
         """Serve the main application page with ETag support."""
@@ -150,17 +151,17 @@ def create_app() -> FastAPI:
                 status_code=200,
             )
 
-        # Check cache / recompute ETag
+        # Check cache / recompute ETag only on cache miss or template modification
         cache_key = str(index_path)
         mtime = index_path.stat().st_mtime
         mtime_key = f"{mtime}"
-        if cache_key not in _html_cache or _html_cache[cache_key][1] != mtime_key:
+        cached = _html_cache.get(cache_key)
+        if cached is None or cached[1] != mtime_key:
             content = index_path.read_text(encoding="utf-8")
             etag = hashlib.md5(content.encode()).hexdigest()  # noqa: S324
-            _html_cache[cache_key] = (content, mtime_key)
+            _html_cache[cache_key] = (content, mtime_key, etag)
         else:
-            content = _html_cache[cache_key][0]
-            etag = hashlib.md5(content.encode()).hexdigest()  # noqa: S324
+            content, _, etag = cached
 
         # ETag conditional response (304 Not Modified)
         if_none_match = request.headers.get("if-none-match")
