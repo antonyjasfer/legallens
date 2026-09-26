@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -19,7 +20,7 @@ from app.core.errors import (
 from app.core.security import compute_file_hash, sanitize_filename, validate_pdf_magic
 from app.models.schemas import DocumentAnalysis
 from app.services.analyzer import analyze_document, prepare_for_professional
-from app.services.document_processor import ProcessedDocument, extract_text_from_pdf
+from app.services.document_processor import PageContent, ProcessedDocument, extract_text_from_pdf
 from app.services.file_search import FileSearchService
 from app.services.firestore import FirestoreService
 from app.services.gcs import GCSService
@@ -32,6 +33,41 @@ router = APIRouter(prefix="/api/documents", tags=["analysis"])
 # Stores ProcessedDocument and analysis results for the session
 _document_cache: dict[str, ProcessedDocument] = {}
 _analysis_cache: dict[str, DocumentAnalysis] = {}
+
+
+def _serialize_processed_doc(doc: ProcessedDocument) -> dict[str, Any]:
+    return {
+        "filename": doc.filename,
+        "total_pages": doc.total_pages,
+        "pages": [{"page_number": p.page_number, "text": p.text} for p in doc.pages],
+        "full_text": doc.full_text,
+        "metadata": doc.metadata,
+    }
+
+
+def _deserialize_processed_doc(data: dict[str, Any]) -> ProcessedDocument:
+    pages = [
+        PageContent(page_number=p["page_number"], text=p["text"]) for p in data.get("pages", [])
+    ]
+    return ProcessedDocument(
+        filename=data["filename"],
+        total_pages=data["total_pages"],
+        pages=pages,
+        full_text=data.get("full_text", ""),
+        metadata=data.get("metadata", {}),
+    )
+
+
+def _persist_document_cache(doc_id: str, doc: ProcessedDocument) -> None:
+    _document_cache[doc_id] = doc
+    try:
+        settings = get_settings()
+        cache_dir = settings.upload_dir / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = cache_dir / f"{doc_id}.json"
+        cache_file.write_text(json.dumps(_serialize_processed_doc(doc)), encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Disk cache write failed for %s: %s", doc_id[:12], exc)
 
 
 async def _validate_and_process_upload(file: UploadFile) -> tuple[ProcessedDocument, str, bytes]:
@@ -97,7 +133,7 @@ async def _validate_and_process_upload(file: UploadFile) -> tuple[ProcessedDocum
         raise HTTPException(status_code=422, detail=exc.message)
 
     # Cache the processed document
-    _document_cache[doc_id] = processed
+    _persist_document_cache(doc_id, processed)
     logger.info("Document cached: hash=%s, name=%s", doc_id[:12], safe_name)
 
     return processed, doc_id, content
@@ -158,7 +194,7 @@ async def analyze_document_endpoint(
         if fs_svc.settings.gemini_configured and temp_path.exists():
             indexed_file = await fs_svc.async_upload_and_index(
                 temp_path,
-                display_name=processed_doc.filename,
+                display_name=f"{doc_id[:16]}__{processed_doc.filename}",
             )
             file_search_doc_name = indexed_file.name
             logger.info("Indexed in Gemini File Search: %s", file_search_doc_name)
@@ -200,6 +236,7 @@ async def analyze_document_endpoint(
     processed_doc.metadata["gcs_object"] = gcs_info.get("blob_path", "")
     if file_search_doc_name:
         processed_doc.metadata["file_search_document_name"] = file_search_doc_name
+    _persist_document_cache(doc_id, processed_doc)
 
     # Run analysis
     try:
@@ -214,8 +251,13 @@ async def analyze_document_endpoint(
     except GeminiAPIError as exc:
         raise HTTPException(status_code=502, detail=exc.message)
 
-    # Cache analysis
+    # Cache analysis (memory + disk)
     _analysis_cache[doc_id] = analysis
+    try:
+        cache_file = settings.upload_dir / "cache" / f"{doc_id}_analysis.json"
+        cache_file.write_text(analysis.model_dump_json(), encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Disk cache write failed for analysis %s: %s", doc_id[:12], exc)
 
     return {
         "document_id": doc_id,
@@ -236,13 +278,13 @@ async def prepare_questions_endpoint(
 
     Requires a prior analysis of the document (document_id from /analyze).
     """
-    if document_id not in _analysis_cache:
+    analysis = get_cached_analysis(document_id)
+    if analysis is None:
         raise HTTPException(
             status_code=404,
             detail="No analysis found for this document. Please analyze the document first.",
         )
 
-    analysis = _analysis_cache[document_id]
     prep = await prepare_for_professional(analysis, language)
 
     return {"preparation": prep.model_dump()}
@@ -276,9 +318,15 @@ async def delete_document_endpoint(document_id: str):
     if firestore_svc.delete_document_metadata(document_id):
         cleaned_services.append("firestore")
 
-    # 4. Remove from local caches
+    # 4. Remove from local caches (memory + disk)
     _document_cache.pop(document_id, None)
     _analysis_cache.pop(document_id, None)
+    try:
+        settings = get_settings()
+        (settings.upload_dir / "cache" / f"{document_id}.json").unlink(missing_ok=True)
+        (settings.upload_dir / "cache" / f"{document_id}_analysis.json").unlink(missing_ok=True)
+    except Exception as exc:
+        logger.debug("Cache file unlink warning: %s", exc)
     cleaned_services.append("local_cache")
 
     return {
@@ -290,9 +338,61 @@ async def delete_document_endpoint(document_id: str):
 
 def get_cached_document(doc_id: str) -> ProcessedDocument | None:
     """Retrieve a cached document by ID (used by Q&A route)."""
-    return _document_cache.get(doc_id)
+    # 1. In-memory cache
+    if doc_id in _document_cache:
+        return _document_cache[doc_id]
+
+    # 2. Ephemeral disk cache (/tmp)
+    try:
+        settings = get_settings()
+        cache_file = settings.upload_dir / "cache" / f"{doc_id}.json"
+        if cache_file.exists():
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
+            doc = _deserialize_processed_doc(data)
+            _document_cache[doc_id] = doc
+            return doc
+    except Exception as exc:
+        logger.debug("Disk cache read failed for %s: %s", doc_id[:12], exc)
+
+    # 3. Gemini File Search Cloud Fallback (resolves across serverless instances)
+    try:
+        settings = get_settings()
+        if settings.gemini_configured:
+            from app.services.file_search import FileSearchService
+
+            fs_svc = FileSearchService()
+            client = fs_svc._get_client()
+            for f in client.files.list():
+                d_name = getattr(f, "display_name", "") or ""
+                if doc_id[:16] in d_name:
+                    original_name = d_name.split("__", 1)[-1] if "__" in d_name else d_name
+                    doc = ProcessedDocument(
+                        filename=original_name,
+                        total_pages=1,
+                        pages=[],
+                        full_text="",
+                        metadata={"file_search_document_name": f.name},
+                    )
+                    _document_cache[doc_id] = doc
+                    return doc
+    except Exception as exc:
+        logger.debug("Gemini file lookup fallback failed for %s: %s", doc_id[:12], exc)
+
+    return None
 
 
 def get_cached_analysis(doc_id: str) -> DocumentAnalysis | None:
     """Retrieve a cached analysis by ID."""
-    return _analysis_cache.get(doc_id)
+    if doc_id in _analysis_cache:
+        return _analysis_cache[doc_id]
+    try:
+        settings = get_settings()
+        cache_file = settings.upload_dir / "cache" / f"{doc_id}_analysis.json"
+        if cache_file.exists():
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
+            analysis = DocumentAnalysis.model_validate(data)
+            _analysis_cache[doc_id] = analysis
+            return analysis
+    except Exception as exc:
+        logger.debug("Disk cache read failed for analysis %s: %s", doc_id[:12], exc)
+    return None
