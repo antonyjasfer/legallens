@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="LegalLens — Evidence-First Legal Document Navigator. Upload legal documents and understand what matters, with every answer linked back to its evidence.">
+  <title>LegalLens — Evidence-First Legal Document Navigator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
+</head>
+<body>
+  <!-- Skip to content link for keyboard/screen reader users -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- Screen reader announcements -->
+  <div id="sr-announcer" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+
+  <!-- Toast notifications -->
+  <div id="toast-container" class="toast-container" aria-live="assertive"></div>
+
+  <header>
+    <div class="container header-inner">
+      <div class="logo">
+        <div class="logo-icon" aria-hidden="true">LL</div>
+        <span>LegalLens</span>
+      </div>
+      <nav aria-label="Main navigation">
+        <button data-view="home" class="active" onclick="navigateTo('home')">Home</button>
+        <button data-view="analyze" onclick="navigateTo('analyze')">Analyze</button>
+        <button data-view="compare" onclick="navigateTo('compare')">Compare</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" id="main-content" role="main">
+    <!-- Content rendered by JavaScript -->
+    <noscript>
+      <div class="card" style="margin-top: 2rem; text-align: center;">
+        <h1>LegalLens requires JavaScript</h1>
+        <p>Please enable JavaScript in your browser to use this application.</p>
+      </div>
+    </noscript>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p class="disclaimer-text">
+        LegalLens provides document information and general assistance, not professional legal advice.
+        For decisions with legal consequences, consider consulting a qualified legal professional.
+      </p>
+      <p style="margin-top: 0.5rem; font-size: 0.75rem;">
+        Built with Google Gemini · Evidence-First Architecture · v1.0.0
+      </p>
+    </div>
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
