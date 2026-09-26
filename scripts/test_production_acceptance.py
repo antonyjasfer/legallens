@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 
-BASE_URL = os.environ.get("BASE_URL", sys.argv[1] if len(sys.argv) > 1 else "https://legallens-gamma.vercel.app")
+BASE_URL = os.environ.get("BASE_URL", sys.argv[1] if len(sys.argv) > 1 else "https://legallens-sable.vercel.app")
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
 
 

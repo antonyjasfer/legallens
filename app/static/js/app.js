@@ -179,9 +179,15 @@ function navigateTo(view) {
 
 function renderApp() {
   const main = $("#main-content");
-  // Update nav
+  // Update nav with aria-current for accessibility
   $$("nav button").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.view === AppState.currentView);
+    const isActive = btn.dataset.view === AppState.currentView;
+    btn.classList.toggle("active", isActive);
+    if (isActive) {
+      btn.setAttribute("aria-current", "page");
+    } else {
+      btn.removeAttribute("aria-current");
+    }
   });
 
   switch (AppState.currentView) {
@@ -311,8 +317,9 @@ function renderAnalyze() {
       </div>
 
       <button class="btn btn-primary" onclick="submitAnalysis()" id="btn-analyze"
-              ${!AppState.fileA || AppState.isLoading ? 'disabled' : ''}>
-        ${AppState.isLoading ? `<span class="spinner"></span> <span id="loading-stage-label">${escapeHtml(AppState.loadingStage || 'Analyzing...')}</span>` : '🔍 Analyze Document'}
+              ${!AppState.fileA || AppState.isLoading ? 'disabled' : ''}
+              aria-busy="${AppState.isLoading}">
+        ${AppState.isLoading ? `<span class="spinner" role="status" aria-label="Loading"></span> <span id="loading-stage-label" aria-live="polite">${escapeHtml(AppState.loadingStage || 'Analyzing...')}</span>` : '🔍 Analyze Document'}
       </button>
     </div>
   `;
@@ -366,8 +373,9 @@ function renderCompare() {
       </div>
 
       <button class="btn btn-primary" onclick="submitComparison()" id="btn-compare"
-              ${!AppState.fileA || !AppState.fileB || AppState.isLoading ? 'disabled' : ''}>
-        ${AppState.isLoading ? '<span class="spinner"></span> Comparing...' : '🔍 Compare Documents'}
+              ${!AppState.fileA || !AppState.fileB || AppState.isLoading ? 'disabled' : ''}
+              aria-busy="${AppState.isLoading}">
+        ${AppState.isLoading ? '<span class="spinner" role="status" aria-label="Comparing"></span> Comparing...' : '🔍 Compare Documents'}
       </button>
     </div>
   `;
@@ -841,7 +849,7 @@ async function askQuestion() {
   // Re-render Q&A messages
   const msgContainer = document.getElementById("qa-messages");
   if (msgContainer) msgContainer.innerHTML = AppState.qaMessages.map(renderQAMessage).join("") +
-    '<div class="loading"><span class="spinner"></span> Finding evidence...</div>';
+    '<div class="loading" role="status" aria-label="Processing question"><span class="spinner"></span> Finding evidence...</div>';
 
   announce("Processing question...");
 

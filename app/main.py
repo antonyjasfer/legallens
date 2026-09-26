@@ -3,12 +3,14 @@
 Main FastAPI application with security middleware, error handlers, and route registration.
 """
 
+import hashlib
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -55,12 +57,15 @@ def create_app() -> FastAPI:
         redoc_url="/api/redoc" if not settings.is_production else None,
     )
 
+    # ── GZip Compression ───────────────────────────────────────────────────
+    app.add_middleware(GZipMiddleware, minimum_size=500)
+
     # ── CORS ───────────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["*"],
     )
 
@@ -79,6 +84,13 @@ def create_app() -> FastAPI:
         for header, value in SECURITY_HEADERS.items():
             response.headers[header] = value
         response.headers["X-Request-ID"] = req_id
+
+        # Cache-Control for static assets (immutable content-hashed resources)
+        path = request.url.path
+        if path.startswith("/static/"):
+            response.headers["Cache-Control"] = "public, max-age=86400, immutable"
+        elif path == "/":
+            response.headers["Cache-Control"] = "no-cache"
 
         # Log request
         logger.info(
@@ -125,15 +137,39 @@ def create_app() -> FastAPI:
     # ── Serve Frontend ─────────────────────────────────────────────────────
     template_dir = Path(__file__).parent / "templates"
 
+    # Cache the HTML content and its ETag at module level for efficiency
+    _html_cache: dict[str, tuple[str, str]] = {}
+
     @app.get("/", response_class=HTMLResponse)
-    async def serve_frontend():
-        """Serve the main application page."""
+    async def serve_frontend(request: Request):
+        """Serve the main application page with ETag support."""
         index_path = template_dir / "index.html"
-        if index_path.exists():
-            return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+        if not index_path.exists():
+            return HTMLResponse(
+                content="<h1>LegalLens</h1><p>Frontend template not found.</p>",
+                status_code=200,
+            )
+
+        # Check cache / recompute ETag
+        cache_key = str(index_path)
+        mtime = index_path.stat().st_mtime
+        mtime_key = f"{mtime}"
+        if cache_key not in _html_cache or _html_cache[cache_key][1] != mtime_key:
+            content = index_path.read_text(encoding="utf-8")
+            etag = hashlib.md5(content.encode()).hexdigest()  # noqa: S324
+            _html_cache[cache_key] = (content, mtime_key)
+        else:
+            content = _html_cache[cache_key][0]
+            etag = hashlib.md5(content.encode()).hexdigest()  # noqa: S324
+
+        # ETag conditional response (304 Not Modified)
+        if_none_match = request.headers.get("if-none-match")
+        if if_none_match and if_none_match.strip('"') == etag:
+            return HTMLResponse(content="", status_code=304, headers={"ETag": f'"{etag}"'})
+
         return HTMLResponse(
-            content="<h1>LegalLens</h1><p>Frontend template not found.</p>",
-            status_code=200,
+            content=content,
+            headers={"ETag": f'"{etag}"'},
         )
 
     return app
