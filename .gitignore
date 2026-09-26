@@ -1,4 +1,13 @@
+# Environment
+.env
+.env.*
+!.env.example
+.vercel/
+
 # Python
+venv/
+.venv/
+env/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,20 +15,6 @@ __pycache__/
 *.egg
 dist/
 build/
-venv/
-.venv/
-env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Environment
-.env
-.env.local
-.env.production
 
 # Uploads & Temp
 uploads/

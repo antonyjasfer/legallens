@@ -72,19 +72,30 @@ The **deterministic verifier** runs after every Gemini response:
 - Invalid page numbers are removed
 - Document name mismatches are flagged
 
-## Google Technology Stack
+## Infrastructure & Technology Stack
 
-| Service | Purpose | Implementation File |
-|---|---|---|
-| **Gemini 3.8 Flash** | Document reasoning & structured JSON output | `app/services/gemini.py` |
-| **Gemini File Search** | Evidence-grounded document retrieval & citations | `app/services/file_search.py` |
-| **Cloud Storage** | Private uploaded legal PDF storage | `app/services/gcs.py` |
-| **Firestore** | Session and document metadata storage (no full PDFs) | `app/services/firestore.py` |
-| **Document AI** | OCR / scanned & layout-heavy PDF parsing | `app/services/document_ai.py` |
-| **Google Search Grounding** | External legal research (isolated from document RAG) | `app/services/legal_context.py` |
-| **Secret Manager** | Production secret handling (`GEMINI_API_KEY`) | `scripts/create_secrets.ps1` |
-| **Cloud Run** | Production application hosting | `Dockerfile`, `scripts/deploy_cloud_run.ps1` |
-| **Cloud Logging** | Structured operational telemetry & security logging | `app/core/logging.py` |
+LegalLens is deployed as a FastAPI application on Vercel while its GenAI pipeline uses Google Gemini, Gemini File Search for document-grounded retrieval, and Google Search grounding for isolated external legal context.
+
+### Deployed Infrastructure & Active GenAI Stack
+| Component | Technology | Purpose | Implementation File |
+|---|---|---|---|
+| **Hosting** | Vercel Serverless Functions | Fast global edge delivery for FastAPI app & static UI | `api/index.py`, `vercel.json` |
+| **Backend Runtime** | FastAPI (Python 3.12) | High-throughput async REST API & evidence verification | `app/main.py` |
+| **GenAI Reasoning** | Google Gemini 3.8 Flash | Contract analysis, concern matching, comparison, Pydantic schemas | `app/services/gemini.py` |
+| **Document Grounding** | Gemini File Search | File upload, semantic indexing, clause & citation retrieval | `app/services/file_search.py` |
+| **External Legal Context** | Google Search Grounding | Live statutory and case context search, strictly isolated from user document Q&A | `app/services/legal_context.py` |
+| **PDF Extraction** | PyMuPDF | Local deterministic page-by-page text & layout extraction | `app/services/document_processor.py` |
+
+### Optional Google Cloud Production Integrations
+The repository includes production-ready, fully tested enterprise connectors for Google Cloud Platform that can be enabled in enterprise environments:
+| Service | Purpose | Status in Current Deployment | Implementation File |
+|---|---|---|---|
+| **Cloud Storage (GCS)** | Private document bucket persistence | Optional (Local scratch fallback active) | `app/services/gcs.py` |
+| **Cloud Firestore** | Document metadata & session store | Optional (In-memory fallback active) | `app/services/firestore.py` |
+| **Document AI** | Scanned / layout-heavy OCR parser | Optional (PyMuPDF fallback active) | `app/services/document_ai.py` |
+| **Secret Manager** | Hardware-backed secret storage | Optional (Environment variable fallback active) | `scripts/create_secrets.ps1` |
+| **Cloud Run** | Containerized GCP production hosting | Optional container deployment ready | `Dockerfile`, `scripts/deploy_cloud_run.ps1` |
+| **Cloud Logging** | Structured GCP telemetry | Optional (Local structured logging active) | `app/core/logging.py` |
 
 ### Services Deliberately Excluded
 To maintain architectural integrity, the following services were deliberately omitted:

@@ -1,0 +1,11 @@
+# Deployment exclusions for Vercel Serverless Function
+tests/
+samples/
+scripts/
+.github/
+generate_samples.py
+Dockerfile
+.dockerignore
+.pytest_cache/
+.ruff_cache/
+*.md

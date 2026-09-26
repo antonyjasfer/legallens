@@ -2,14 +2,13 @@
 
 ## Describe the changes/updates made in the deployed version
 
-LegalLens is a fully functional evidence-first legal document navigator deployed on Cloud Run. It analyzes uploaded PDF legal documents with personalized concern selection, providing structured findings with page-level evidence citations, obligation extraction, date/monetary term detection, and missing information alerts. Features include evidence-grounded Q&A (returns NOT_FOUND when information is absent), side-by-side document comparison with structured change detection, printable professional consultation preparation sheets, and optional Google Search-grounded external legal context research. Built with FastAPI + Google Gemini API (google-genai SDK), featuring a deterministic anti-hallucination verifier, prompt injection defense, comprehensive accessibility (WCAG), and security headers. All AI responses are validated against Pydantic schemas before display.
+LegalLens is deployed as a FastAPI application on Vercel while its GenAI pipeline uses Google Gemini, Gemini File Search for document-grounded retrieval, and Google Search grounding for isolated external legal context. It analyzes uploaded PDF legal documents with personalized concern selection, providing structured findings with page-level evidence citations, obligation extraction, date/monetary term detection, and missing information alerts. Features include evidence-grounded Q&A (returns NOT_FOUND when information is absent), side-by-side document comparison with structured change detection, printable professional consultation preparation sheets, and isolated Google Search-grounded external legal context research. Built with FastAPI + Google Gemini API (google-genai SDK), featuring a deterministic anti-hallucination verifier, prompt injection defense, and security headers. All AI responses are validated against Pydantic schemas before display.
 
 ## Mention the Gen AI services utilized in the submission, and where did you utilize it?
 
-1. **Gemini 3.8 Flash** (`google-genai` SDK): Used in `app/services/gemini.py` for core document reasoning, personalized concern analysis, risk evaluation, and multi-version contract comparison with structured JSON schema enforcement.
-2. **Gemini File Search**: Used in `app/services/file_search.py` for multimodal contract indexing, semantic retrieval, and genuine page/clause citation extraction for evidence-grounded Q&A.
-3. **Google Search Grounding**: Used in `app/services/legal_context.py` for external statutory and regulatory research, strictly isolated from user document Q&A with live web citations.
-4. **Google Document AI Layout Parser**: Used in `app/services/document_ai.py` as an intelligent OCR and layout parser for scanned or table-heavy legal PDFs.
+1. **Google Gemini 3.8 Flash** (`google-genai` SDK): Used in `app/services/gemini.py` for core document reasoning, personalized concern analysis, risk evaluation, and multi-version contract comparison with structured Pydantic schema validation.
+2. **Gemini File Search**: Used in `app/services/file_search.py` for uploading, indexing, and semantic retrieval over legal PDFs with verified page-level and section-level evidence citations.
+3. **Google Search Grounding**: Used in `app/services/legal_context.py` for external statutory and regulatory context research, strictly isolated from internal document Q&A and accompanied by verifiable live web citations.
 
 ### Sample Documents Included
 The repository includes ready-to-test realistic legal documents in the `samples/` directory:

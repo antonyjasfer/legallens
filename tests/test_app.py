@@ -484,3 +484,15 @@ class TestOpenAPI:
         """OpenAPI schema should be accessible in development."""
         response = client.get("/api/docs")
         assert response.status_code == 200
+
+
+# ── 12. Vercel Serverless Entrypoint ──────────────────────────────────────────
+
+class TestVercelEntrypoint:
+    def test_vercel_entrypoint_reexports_app(self):
+        """Verify api/index.py cleanly imports and re-exports the main FastAPI application."""
+        from api.index import app as vercel_app
+
+        assert vercel_app is not None
+        assert vercel_app.title == "LegalLens"
+
