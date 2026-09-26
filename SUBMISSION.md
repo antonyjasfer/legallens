@@ -16,13 +16,18 @@ LegalLens is a fully functional evidence-first legal document navigator deployed
 
 5. **Google Secret Manager**: Recommended for production API key management (documented in README deployment instructions).
 
-## Demo Script (2-3 minutes)
+### Sample Documents Included
+The repository includes ready-to-test realistic legal documents in the `samples/` directory:
+- `samples/employment_agreement.pdf` (3-page employment contract with compensation, non-compete, IP assignment, and arbitration clauses)
+- `samples/nda_mutual_v1.pdf` (Standard 3-year mutual NDA)
+- `samples/nda_strict_v2.pdf` (Revised strict unilateral NDA with liquidated damages and perpetual trade secret confidentiality — ideal for testing document comparison)
+- `samples/residential_lease.pdf` (Residential lease with repair fee, rent increase, and pet policy clauses)
 
 ### 1. Open App (10s)
 Show the LegalLens home page. Point out the 4 trust principles: Evidence Attached, Missing Info Acknowledged, Plain-Language Explanations, Information Not Legal Advice.
 
 ### 2. Upload Employment Agreement (20s)
-Click "Analyze a Document". Upload a sample employment agreement PDF. Select concerns: "Notice Period", "Termination", "Salary/Compensation". Add custom concern: "What happens to my work if I leave?"
+Click "Analyze a Document". Upload `samples/employment_agreement.pdf`. Select concerns: "Notice Period", "Termination", "Salary/Compensation". Add custom concern: "What happens to my work if I leave?"
 
 ### 3. Show Personalized Findings (30s)
 After analysis loads, show the Overview tab. Scroll through Key Facts (parties, start date, salary). Show findings ranked by selected concerns. Click "View evidence" on a finding — show the page number, section, and source excerpt.
