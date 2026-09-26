@@ -6,15 +6,10 @@ LegalLens is a fully functional evidence-first legal document navigator deployed
 
 ## Mention the Gen AI services utilized in the submission, and where did you utilize it?
 
-1. **Google Gemini API** (google-genai Python SDK): Core structured reasoning engine for document analysis, evidence extraction, Q&A, and comparison. Used in `app/services/gemini.py` for all AI generation with structured JSON output, low temperature (0.1) for factual accuracy, and evidence-first prompt constraints.
-
-2. **Gemini Structured Output**: JSON schema enforcement for typed analysis results (DocumentAnalysis, DocumentAnswer, DocumentComparison Pydantic models). Ensures every response follows the evidence-first contract.
-
-3. **Google Search Grounding**: Powers the optional external legal context research feature (`app/services/legal_context.py`). Clearly separated from document-grounded answers with distinct UI labeling. Returns web citations from grounding metadata.
-
-4. **Google Cloud Run**: Containerized deployment via Dockerfile with non-root user, health checks, and PORT environment variable support.
-
-5. **Google Secret Manager**: Recommended for production API key management (documented in README deployment instructions).
+1. **Gemini 3.8 Flash** (`google-genai` SDK): Used in `app/services/gemini.py` for core document reasoning, personalized concern analysis, risk evaluation, and multi-version contract comparison with structured JSON schema enforcement.
+2. **Gemini File Search**: Used in `app/services/file_search.py` for multimodal contract indexing, semantic retrieval, and genuine page/clause citation extraction for evidence-grounded Q&A.
+3. **Google Search Grounding**: Used in `app/services/legal_context.py` for external statutory and regulatory research, strictly isolated from user document Q&A with live web citations.
+4. **Google Document AI Layout Parser**: Used in `app/services/document_ai.py` as an intelligent OCR and layout parser for scanned or table-heavy legal PDFs.
 
 ### Sample Documents Included
 The repository includes ready-to-test realistic legal documents in the `samples/` directory:

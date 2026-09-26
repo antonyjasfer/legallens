@@ -94,10 +94,35 @@ def extract_text_from_pdf(file_bytes: bytes, filename: str) -> ProcessedDocument
     finally:
         doc.close()
 
+    if not result.has_content or len(result.full_text) < (result.total_pages * 50):
+        # Attempt Document AI Layout Parser fallback for scanned/low-density PDFs
+        try:
+            from app.services.document_ai import DocumentAIService
+            doc_ai = DocumentAIService()
+            if doc_ai.is_configured:
+                logger.info("Attempting Google Document AI Layout Parser for '%s'", filename)
+                ai_result = doc_ai.parse_layout(file_bytes=file_bytes)
+                if ai_result.success and ai_result.raw_text.strip():
+                    pages = [
+                        PageContent(page_number=p.page_number, text=p.text)
+                        for p in ai_result.pages
+                    ]
+                    result = ProcessedDocument(
+                        filename=filename,
+                        total_pages=ai_result.total_pages,
+                        pages=pages,
+                        full_text=ai_result.raw_text,
+                        metadata={"source": "Google Document AI Layout Parser"},
+                    )
+                    logger.info("Successfully extracted text via Document AI for '%s'", filename)
+                    return result
+        except Exception as exc:
+            logger.warning("Document AI layout parsing fallback error: %s", exc)
+
     if not result.has_content:
         raise DocumentProcessingError(
             "No extractable text found in the PDF. It may be a scanned image document. "
-            "Please provide a text-based PDF."
+            "Please provide a text-based PDF or enable Google Document AI OCR."
         )
 
     logger.info(

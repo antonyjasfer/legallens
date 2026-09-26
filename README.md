@@ -72,15 +72,26 @@ The **deterministic verifier** runs after every Gemini response:
 - Invalid page numbers are removed
 - Document name mismatches are flagged
 
-## Google Services
+## Google Technology Stack
 
-| Google Service | Purpose | Integration Point |
+| Service | Purpose | Implementation File |
 |---|---|---|
-| **Gemini API** (`google-genai` SDK) | Structured legal reasoning, evidence extraction, plain-language explanations | `app/services/gemini.py` |
-| **Gemini Structured Output** | JSON schema enforcement for typed analysis results | All analysis/QA/comparison prompts |
-| **Google Search Grounding** | Optional external legal context with web citations | `app/services/legal_context.py` |
-| **Cloud Run** | Containerized production deployment | `Dockerfile` |
-| **Secret Manager** | Production API key management | Deployment instructions |
+| **Gemini 3.8 Flash** | Document reasoning & structured JSON output | `app/services/gemini.py` |
+| **Gemini File Search** | Evidence-grounded document retrieval & citations | `app/services/file_search.py` |
+| **Cloud Storage** | Private uploaded legal PDF storage | `app/services/gcs.py` |
+| **Firestore** | Session and document metadata storage (no full PDFs) | `app/services/firestore.py` |
+| **Document AI** | OCR / scanned & layout-heavy PDF parsing | `app/services/document_ai.py` |
+| **Google Search Grounding** | External legal research (isolated from document RAG) | `app/services/legal_context.py` |
+| **Secret Manager** | Production secret handling (`GEMINI_API_KEY`) | `scripts/create_secrets.ps1` |
+| **Cloud Run** | Production application hosting | `Dockerfile`, `scripts/deploy_cloud_run.ps1` |
+| **Cloud Logging** | Structured operational telemetry & security logging | `app/core/logging.py` |
+
+### Services Deliberately Excluded
+To maintain architectural integrity, the following services were deliberately omitted:
+- **BigQuery / Dataflow**: Transactional document navigation does not require data warehousing.
+- **Pub/Sub**: Interactive user-facing pipeline delivers instant analysis without queue overhead.
+- **Google Maps / Gmail API**: Irrelevant to legal contract reasoning.
+- **Translation API**: Multilingual plain-language explanations (English, Tamil, Hindi) are natively produced by Gemini with original document citations preserved.
 
 ## Architecture Diagram
 

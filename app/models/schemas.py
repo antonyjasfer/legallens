@@ -7,8 +7,9 @@ about a document must carry evidence and a support status.
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,13 @@ class Finding(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list)
     support_status: SupportStatus = SupportStatus.NOT_FOUND
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_finding(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "evidence" in data and isinstance(data["evidence"], dict):
+            data["evidence"] = [data["evidence"]]
+        return data
+
 
 class Obligation(BaseModel):
     """A contractual obligation extracted from the document."""
@@ -90,12 +98,34 @@ class Obligation(BaseModel):
     consequence: str | None = Field(default=None, description="Consequence stated in document")
     evidence: list[Evidence] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_obligation(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "party" in data and "actor" not in data:
+                data["actor"] = data["party"]
+            if "obligation" in data and "action" not in data:
+                data["action"] = data["obligation"]
+            if "evidence" in data and isinstance(data["evidence"], dict):
+                data["evidence"] = [data["evidence"]]
+        return data
+
 
 class DateItem(BaseModel):
     """An important date or deadline extracted from the document."""
     description: str = Field(description="What the date relates to")
     date_text: str = Field(description="The date as stated in the document")
     evidence: list[Evidence] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_date(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "date" in data and "date_text" not in data:
+                data["date_text"] = str(data["date"])
+            if "evidence" in data and isinstance(data["evidence"], dict):
+                data["evidence"] = [data["evidence"]]
+        return data
 
 
 class MonetaryTerm(BaseModel):
@@ -105,12 +135,29 @@ class MonetaryTerm(BaseModel):
     details: str | None = Field(default=None, description="Additional details or conditions")
     evidence: list[Evidence] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_monetary(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "term" in data and "description" not in data:
+                data["description"] = data["term"]
+            if "evidence" in data and isinstance(data["evidence"], dict):
+                data["evidence"] = [data["evidence"]]
+        return data
+
 
 class KeyFact(BaseModel):
     """A key structured fact about the document."""
     label: str = Field(description="Fact label: parties, effective date, duration, etc.")
     value: str = Field(description="The fact value")
     evidence: list[Evidence] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_key_fact(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "evidence" in data and isinstance(data["evidence"], dict):
+            data["evidence"] = [data["evidence"]]
+        return data
 
 
 # ── Missing Information ────────────────────────────────────────────────────────
@@ -121,6 +168,18 @@ class MissingInformation(BaseModel):
     topic: str = Field(description="What information is missing")
     explanation: str = Field(description="Why the user may want this clarified")
     suggested_question: str = Field(description="Question the user could ask the counterparty or lawyer")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_missing(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "questions" in data and "suggested_question" not in data:
+                data["suggested_question"] = data["questions"] if isinstance(data["questions"], str) else ", ".join(data["questions"])
+            if "why_it_matters" in data and "explanation" not in data:
+                data["explanation"] = data["why_it_matters"]
+            elif "explanation" not in data:
+                data["explanation"] = f"Clarification recommended for {data.get('topic', 'this clause')}."
+        return data
 
 
 # ── Document Analysis ──────────────────────────────────────────────────────────

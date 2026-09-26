@@ -24,9 +24,31 @@ const AppState = {
   comparison: null,
   qaMessages: [],
   isLoading: false,
+  loadingStage: "Ready",
   fileA: null,
   fileB: null,
 };
+
+function formatUserError(rawMsg) {
+  if (!rawMsg) return "We couldn't reach the analysis service.";
+  const str = String(rawMsg).toLowerCase();
+  if (str.includes("leaked") || str.includes("not configured") || str.includes("unauthorized") || str.includes("credentials missing") || str.includes("clienterror")) {
+    return "AI service is not configured yet. Check server diagnostics.";
+  }
+  if (str.includes("quota") || str.includes("429") || str.includes("exhausted")) {
+    return "Google AI quota is temporarily unavailable. Please try again shortly.";
+  }
+  if (str.includes("index") || str.includes("corrupt") || str.includes("could not be indexed")) {
+    return "Your document could not be indexed. Please try again.";
+  }
+  if (str.includes("reach") || str.includes("network") || str.includes("failed to fetch") || str.includes("502")) {
+    return "We couldn't reach the analysis service.";
+  }
+  if (str.includes("high demand") || str.includes("503") || str.includes("overloaded")) {
+    return "Google AI service is currently experiencing high demand. Please try again shortly.";
+  }
+  return rawMsg;
+}
 
 const CONCERN_CHIPS = {
   employment: [
@@ -290,7 +312,7 @@ function renderAnalyze() {
 
       <button class="btn btn-primary" onclick="submitAnalysis()" id="btn-analyze"
               ${!AppState.fileA || AppState.isLoading ? 'disabled' : ''}>
-        ${AppState.isLoading ? '<span class="spinner"></span> Analyzing...' : '🔍 Analyze Document'}
+        ${AppState.isLoading ? `<span class="spinner"></span> <span id="loading-stage-label">${escapeHtml(AppState.loadingStage || 'Analyzing...')}</span>` : '🔍 Analyze Document'}
       </button>
     </div>
   `;
@@ -366,7 +388,8 @@ function renderResults() {
       <div style="display: flex; gap: var(--space-sm); flex-wrap: wrap;">
         <button class="btn btn-secondary btn-sm" onclick="navigateTo('analyze')">← New Analysis</button>
         <button class="btn btn-secondary btn-sm" onclick="prepareQuestions()">📝 Prepare Questions</button>
-        <button class="btn btn-secondary btn-sm" onclick="toggleResearch()">🔍 Research Context</button>
+        <button class="btn btn-secondary btn-sm" onclick="toggleResearch()">🌐 External Legal Context</button>
+        <button class="btn btn-secondary btn-sm" style="color: #ef4444; border-color: #ef4444;" onclick="deleteCurrentDocument()">🗑️ Delete Document</button>
       </div>
     </div>
 
@@ -756,8 +779,25 @@ async function submitAnalysis() {
   if (!AppState.fileA || AppState.isLoading) return;
 
   AppState.isLoading = true;
+  AppState.loadingStage = "Uploading securely...";
   renderApp();
-  announce("Analyzing document, please wait...");
+  announce(AppState.loadingStage);
+
+  const stages = [
+    { delay: 1000, text: "Preparing document..." },
+    { delay: 2500, text: "Indexing evidence..." },
+    { delay: 4500, text: "Analyzing selected concerns..." },
+    { delay: 7500, text: "Verifying citations..." },
+  ];
+
+  const timers = stages.map(s => setTimeout(() => {
+    if (AppState.isLoading) {
+      AppState.loadingStage = s.text;
+      const el = document.getElementById("loading-stage-label");
+      if (el) el.textContent = s.text;
+      announce(s.text);
+    }
+  }, s.delay));
 
   const formData = new FormData();
   formData.append("file", AppState.fileA);
@@ -777,12 +817,14 @@ async function submitAnalysis() {
     AppState.analysis = data.analysis;
     AppState.qaMessages = [];
     AppState.currentView = "results";
-    announce("Analysis complete");
+    announce("Analysis complete. Ready.");
   } catch (err) {
-    showToast(err.message);
+    showToast(formatUserError(err.message));
     announce("Analysis failed");
   } finally {
+    timers.forEach(t => clearTimeout(t));
     AppState.isLoading = false;
+    AppState.loadingStage = "Ready";
     renderApp();
   }
 }
@@ -821,15 +863,37 @@ async function askQuestion() {
     AppState.qaMessages.push({ role: "assistant", data: data.answer });
     announce("Answer received");
   } catch (err) {
-    showToast(err.message);
+    const friendly = formatUserError(err.message);
+    showToast(friendly);
     AppState.qaMessages.push({
       role: "assistant",
-      data: { answer: `Error: ${err.message}`, support_status: "AMBIGUOUS", evidence: [] },
+      data: { answer: friendly, support_status: "AMBIGUOUS", evidence: [] },
     });
   } finally {
     AppState.isLoading = false;
     const mc = document.getElementById("qa-messages");
     if (mc) mc.innerHTML = AppState.qaMessages.map(renderQAMessage).join("");
+  }
+}
+
+async function deleteCurrentDocument() {
+  if (!AppState.documentId) return;
+  if (!confirm("Are you sure you want to permanently delete this document and all its indexed data across Google Cloud Storage, Firestore, and Gemini File Search?")) return;
+
+  try {
+    const res = await fetch(`/api/documents/${AppState.documentId}`, { method: "DELETE" });
+    if (res.ok) {
+      showToast("Document permanently deleted from all Google services and server storage.", "success");
+      AppState.documentId = null;
+      AppState.documentName = null;
+      AppState.analysis = null;
+      AppState.qaMessages = [];
+      navigateTo("home");
+    } else {
+      showToast("Failed to delete document.");
+    }
+  } catch (err) {
+    showToast("Error deleting document: " + err.message);
   }
 }
 

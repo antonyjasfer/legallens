@@ -60,3 +60,31 @@ class DocumentNotFoundError(LegalLensError):
             message=f"Document '{doc_id}' not found in current session.",
             status_code=404,
         )
+
+
+class GCSStorageError(LegalLensError):
+    """Raised when Google Cloud Storage operations fail."""
+
+    def __init__(self, message: str = "Cloud Storage operation failed."):
+        super().__init__(message=message, status_code=502)
+
+
+class FirestoreError(LegalLensError):
+    """Raised when Firestore operations fail."""
+
+    def __init__(self, message: str = "Firestore database operation failed."):
+        super().__init__(message=message, status_code=502)
+
+
+class DocumentAIError(LegalLensError):
+    """Raised when Document AI OCR/parsing fails."""
+
+    def __init__(self, message: str = "Document AI parsing failed."):
+        super().__init__(message=message, status_code=502)
+
+
+class FileSearchError(LegalLensError):
+    """Raised when Gemini File Search indexing or retrieval fails."""
+
+    def __init__(self, message: str = "File Search operation failed."):
+        super().__init__(message=message, status_code=502)

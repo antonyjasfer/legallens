@@ -38,12 +38,17 @@ def _validate_evidence(evidence: Evidence, known_doc_names: set[str]) -> Evidenc
 
     # Document name validation
     if known_doc_names and evidence.document_name not in known_doc_names:
-        # Try to match case-insensitively
+        # Try to match case-insensitively or by stem name
         match = None
+        ev_norm = evidence.document_name.lower().replace(".pdf", "").replace("_", " ").replace("-", " ").strip()
         for name in known_doc_names:
-            if name.lower() == evidence.document_name.lower():
+            norm = name.lower().replace(".pdf", "").replace("_", " ").replace("-", " ").strip()
+            if name.lower() == evidence.document_name.lower() or norm == ev_norm:
                 match = name
                 break
+        if not match and len(known_doc_names) == 1:
+            match = next(iter(known_doc_names))
+
         if match:
             evidence.document_name = match
         else:

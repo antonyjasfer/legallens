@@ -5,6 +5,7 @@ Handles PDF upload, validation, analysis, and meeting preparation.
 
 import json
 import logging
+import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -18,6 +19,9 @@ from app.core.security import compute_file_hash, sanitize_filename, validate_pdf
 from app.models.schemas import DocumentAnalysis
 from app.services.analyzer import analyze_document, prepare_for_professional
 from app.services.document_processor import ProcessedDocument, extract_text_from_pdf
+from app.services.file_search import FileSearchService
+from app.services.firestore import FirestoreService
+from app.services.gcs import GCSService
 
 logger = logging.getLogger("legallens.routes.analysis")
 
@@ -29,11 +33,11 @@ _document_cache: dict[str, ProcessedDocument] = {}
 _analysis_cache: dict[str, DocumentAnalysis] = {}
 
 
-async def _validate_and_process_upload(file: UploadFile) -> tuple[ProcessedDocument, str]:
+async def _validate_and_process_upload(file: UploadFile) -> tuple[ProcessedDocument, str, bytes]:
     """Validate an uploaded file and extract text.
 
     Returns:
-        Tuple of (ProcessedDocument, document_id).
+        Tuple of (ProcessedDocument, document_id, raw_bytes).
 
     Raises:
         HTTPException on validation or processing failure.
@@ -83,7 +87,7 @@ async def _validate_and_process_upload(file: UploadFile) -> tuple[ProcessedDocum
     # Check cache
     if doc_id in _document_cache:
         logger.info("Document '%s' found in cache (hash=%s)", safe_name, doc_id[:12])
-        return _document_cache[doc_id], doc_id
+        return _document_cache[doc_id], doc_id, content
 
     # Extract text
     try:
@@ -95,7 +99,7 @@ async def _validate_and_process_upload(file: UploadFile) -> tuple[ProcessedDocum
     _document_cache[doc_id] = processed
     logger.info("Document cached: hash=%s, name=%s", doc_id[:12], safe_name)
 
-    return processed, doc_id
+    return processed, doc_id, content
 
 
 @router.post("/analyze", response_model=dict)
@@ -108,12 +112,12 @@ async def analyze_document_endpoint(
     """Upload and analyze a legal document with personalized concerns.
 
     The analysis pipeline:
-    1. Validate and extract text from the PDF
-    2. Generate structured analysis via Gemini with evidence-first prompting
-    3. Run deterministic verification on the output
-    4. Return validated, structured results
-
-    Returns document_id for subsequent Q&A queries.
+    1. Validate and extract text from the PDF (with Document AI fallback if scanned)
+    2. Upload to private Google Cloud Storage (or secure local scratch)
+    3. Index in Gemini File Search for evidence retrieval
+    4. Store metadata in Google Cloud Firestore
+    5. Generate structured analysis via Gemini with evidence-first prompting
+    6. Run deterministic verification on the output
     """
     # Parse concerns from JSON string
     try:
@@ -124,7 +128,62 @@ async def analyze_document_endpoint(
         concern_list = []
 
     # Validate and process upload
-    processed_doc, doc_id = await _validate_and_process_upload(file)
+    processed_doc, doc_id, raw_bytes = await _validate_and_process_upload(file)
+    session_id = str(uuid.uuid4())[:8]
+
+    # Save to disk for GCS and File Search indexing
+    settings = get_settings()
+    temp_path = settings.upload_dir / session_id / f"{doc_id}.pdf"
+    temp_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path.write_bytes(raw_bytes)
+
+    # Store in GCS
+    gcs_svc = GCSService.get_instance()
+    gcs_info = {}
+    try:
+        gcs_info = gcs_svc.upload_document(
+            content=raw_bytes,
+            original_filename=processed_doc.filename,
+            session_id=session_id,
+            document_id=doc_id,
+        )
+    except Exception as exc:
+        logger.warning("GCS upload warning: %s", exc)
+
+    # Index in Gemini File Search if configured and file exists on disk
+    file_search_doc_name = None
+    try:
+        fs_svc = FileSearchService()
+        if fs_svc.settings.gemini_configured and temp_path.exists():
+            indexed_file = fs_svc.upload_and_index(temp_path, display_name=processed_doc.filename)
+            file_search_doc_name = indexed_file.name
+            logger.info("Indexed in Gemini File Search: %s", file_search_doc_name)
+    except Exception as exc:
+        logger.warning("Gemini File Search indexing skipped: %s", exc)
+
+    # Persist metadata to Firestore
+    try:
+        firestore_svc = FirestoreService.get_instance()
+        firestore_svc.save_document_metadata({
+            "document_id": doc_id,
+            "session_id": session_id,
+            "original_filename": processed_doc.filename,
+            "gcs_object": gcs_info.get("blob_path", ""),
+            "sha256": doc_id,
+            "mime_type": "application/pdf",
+            "file_search_document_name": file_search_doc_name or "",
+            "document_ai_used": processed_doc.metadata.get("source") == "Google Document AI Layout Parser",
+            "selected_concerns": concern_list,
+            "language": language,
+        })
+    except Exception as exc:
+        logger.warning("Firestore metadata persistence warning: %s", exc)
+
+    # Update processed_doc metadata with Cloud references
+    processed_doc.metadata["session_id"] = session_id
+    processed_doc.metadata["gcs_object"] = gcs_info.get("blob_path", "")
+    if file_search_doc_name:
+        processed_doc.metadata["file_search_document_name"] = file_search_doc_name
 
     # Run analysis
     try:
@@ -147,6 +206,8 @@ async def analyze_document_endpoint(
         "document_name": processed_doc.filename,
         "total_pages": processed_doc.total_pages,
         "analysis": analysis.model_dump(),
+        "file_search_indexed": bool(file_search_doc_name),
+        "metadata": processed_doc.metadata,
     }
 
 
@@ -169,6 +230,46 @@ async def prepare_questions_endpoint(
     prep = await prepare_for_professional(analysis, language)
 
     return {"preparation": prep.model_dump()}
+
+
+@router.delete("/{document_id}", response_model=dict)
+async def delete_document_endpoint(document_id: str):
+    """Privacy cleanup: Delete document across GCS, Firestore, File Search, and local caches."""
+    cleaned_services: list[str] = []
+    processed = _document_cache.get(document_id)
+    meta = processed.metadata if processed else {}
+
+    # 1. Delete GCS object
+    gcs_svc = GCSService.get_instance()
+    session_id = meta.get("session_id", "default")
+    blob_path = meta.get("gcs_object", f"legal-documents/{session_id}/{document_id}.pdf")
+    if gcs_svc.delete_document(blob_path, session_id, document_id):
+        cleaned_services.append("cloud_storage")
+
+    # 2. Delete Gemini File Search index
+    fs_name = meta.get("file_search_document_name")
+    if fs_name:
+        try:
+            FileSearchService().delete_indexed_file(fs_name)
+            cleaned_services.append("file_search")
+        except Exception as exc:
+            logger.warning("Could not delete from File Search: %s", exc)
+
+    # 3. Delete Firestore metadata
+    firestore_svc = FirestoreService.get_instance()
+    if firestore_svc.delete_document_metadata(document_id):
+        cleaned_services.append("firestore")
+
+    # 4. Remove from local caches
+    _document_cache.pop(document_id, None)
+    _analysis_cache.pop(document_id, None)
+    cleaned_services.append("local_cache")
+
+    return {
+        "status": "deleted",
+        "document_id": document_id,
+        "cleaned_services": cleaned_services,
+    }
 
 
 def get_cached_document(doc_id: str) -> ProcessedDocument | None:

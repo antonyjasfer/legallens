@@ -51,6 +51,7 @@ async def analyze_document(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             document_text=doc.full_text,
+            response_schema=DocumentAnalysis,
         )
 
     # Parse into structured model
@@ -92,6 +93,7 @@ async def ask_document(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             document_text=doc.full_text,
+            response_schema=DocumentAnswer,
         )
 
     try:
@@ -130,6 +132,7 @@ async def compare_documents(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             document_text=combined_text,
+            response_schema=DocumentComparison,
         )
 
     try:
