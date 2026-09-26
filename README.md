@@ -79,7 +79,7 @@ LegalLens is deployed as a FastAPI application on Vercel while its GenAI pipelin
 ### Deployed Infrastructure & Active GenAI Stack
 | Component | Technology | Purpose | Implementation File |
 |---|---|---|---|
-| **Hosting** | Vercel Serverless Functions | Fast global edge delivery for FastAPI app & static UI | `api/index.py`, `vercel.json` |
+| **Hosting** | Vercel Serverless Functions | Fast global edge delivery for FastAPI app & static UI | `api/index.py` |
 | **Backend Runtime** | FastAPI (Python 3.12) | High-throughput async REST API & evidence verification | `app/main.py` |
 | **GenAI Reasoning** | Google Gemini 3.8 Flash | Contract analysis, concern matching, comparison, Pydantic schemas | `app/services/gemini.py` |
 | **Document Grounding** | Gemini File Search | File upload, semantic indexing, clause & citation retrieval | `app/services/file_search.py` |
@@ -186,14 +186,15 @@ graph TB
 | PDF Processing | PyMuPDF (fitz) |
 | Frontend | Vanilla HTML/CSS/JS (no build step) |
 | Testing | pytest, httpx |
-| Deployment | Docker, Cloud Run |
+| Live Deployment | Vercel Serverless / FastAPI |
+| Optional Deployment | Docker, Cloud Run (container artifacts retained) |
 | CI | GitHub Actions |
 
 ## Local Setup
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/legallens.git
+git clone https://github.com/antonyjasfer/legallens.git
 cd legallens
 
 # 2. Create virtual environment
@@ -219,12 +220,14 @@ uvicorn app.main:app --reload --port 8080
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GEMINI_API_KEY` | Yes (for AI features) | Google Gemini API key |
-| `GEMINI_MODEL` | No | Model name (default: `gemini-2.5-flash`) |
+| `GEMINI_MODEL` | No | Model name (default: `gemini-3.8-flash`) |
 | `APP_ENV` | No | `development` / `production` |
 | `MAX_UPLOAD_MB` | No | Max upload size (default: 10) |
-| `PORT` | No | Server port (default: 8080, set by Cloud Run) |
+| `PORT` | No | Server port (default: 8080, set by container runtimes) |
 
-## Cloud Run Deployment
+## Optional Cloud Run Deployment
+
+> **Note**: LegalLens is deployed live to production on Vercel. Container artifacts (`Dockerfile`, deploy scripts) are retained in the repository for optional Google Cloud Run hosting.
 
 ```bash
 # 1. Set your project

@@ -79,19 +79,29 @@ Generate → Parse → Validate Schema → Verify Evidence → Respond
 - Generic messages in production, detailed in development
 - Graceful degradation when Gemini is unavailable
 
-## Google Technology Stack
+## Technology Stack & Cloud Architecture
 
-| Service | Purpose | Architecture Role |
+LegalLens is deployed live as a FastAPI application on Vercel while its GenAI pipeline uses Google Gemini, Gemini File Search for document-grounded retrieval, and Google Search grounding for isolated external legal context.
+
+### Active Production & GenAI Stack
+| Service / Component | Purpose | Architecture Role |
 |---|---|---|
+| **Vercel Serverless** | Production application hosting | Edge delivery for FastAPI app & static UI (`api/index.py`) |
+| **FastAPI (Python 3.12)** | Application backend | High-throughput async REST API & deterministic evidence verifier |
 | **Gemini 3.8 Flash** | Document reasoning & structured JSON output | Primary LLM engine using `google-genai` SDK |
 | **Gemini File Search** | Multimodal document indexing & evidence citation | Strict document RAG with page and section references |
-| **Google Cloud Storage** | Private encrypted storage for uploaded PDFs | Isolated bucket at `legal-documents/<session_id>/<doc_id>.pdf` |
-| **Cloud Firestore** | Document and session metadata | Lightweight metadata only (no full PDFs or secrets) |
-| **Document AI Layout Parser** | Advanced OCR & structural extraction | Fallback parser for scanned or low text density PDFs |
 | **Google Search Grounding** | General external legal context | Isolated research route (`POST /api/legal-context`) |
-| **Secret Manager** | Production credential management | Securely manages `GEMINI_API_KEY` for Cloud Run |
-| **Cloud Run** | Serverless production container hosting | Binds to `0.0.0.0:$PORT` with least-privilege IAM service account |
-| **Cloud Logging** | Observability & structured telemetry | Safe operational logs (never logs contract text or API keys) |
+
+### Optional Google Cloud Production Integrations
+The repository includes clean, tested GCP enterprise connectors with safe local fallbacks:
+| Service | Purpose | Status in Current Deployment |
+|---|---|---|
+| **Google Cloud Storage** | Private encrypted storage for uploaded PDFs | Optional (ephemeral local scratch fallback active) |
+| **Cloud Firestore** | Document and session metadata | Optional (in-memory metadata cache fallback active) |
+| **Document AI Layout Parser** | Advanced OCR & structural extraction | Optional (PyMuPDF local extraction active) |
+| **Secret Manager** | Production credential management for GCP | Optional (Vercel encrypted environment variables active) |
+| **Cloud Run** | Containerized serverless hosting | Optional (artifacts retained via `Dockerfile` and `scripts/deploy_cloud_run.ps1`) |
+| **Cloud Logging** | Observability & structured telemetry | Optional (local structured logging active) |
 
 ## Privacy & Document Lifecycle
 
