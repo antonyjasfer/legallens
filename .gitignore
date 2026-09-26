@@ -37,3 +37,6 @@ htmlcov/
 
 # Node (should not exist but just in case)
 node_modules/
+
+.vercel
+.env*
