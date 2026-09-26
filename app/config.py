@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 
@@ -36,6 +36,21 @@ class Settings(BaseSettings):
     document_ai_enabled: bool = Field(default=False, description="Enable Document AI layout parser")
     document_ai_processor_id: str = Field(default="", description="Document AI processor resource or ID")
     document_retention_days: int = Field(default=7, description="Document retention days before auto-cleanup")
+
+    @field_validator("document_retention_days", "max_upload_mb", "port", mode="before")
+    @classmethod
+    def _parse_empty_ints(cls, v: object, info: ValidationInfo) -> object:
+        if v == "" or v is None:
+            defaults = {"document_retention_days": 7, "max_upload_mb": 10, "port": 8080}
+            return defaults.get(info.field_name, 0)
+        return v
+
+    @field_validator("document_ai_enabled", mode="before")
+    @classmethod
+    def _parse_empty_bool(cls, v: object) -> object:
+        if v == "" or v is None:
+            return False
+        return v
 
     # --- Security ---
     cors_origins: list[str] = Field(default=["*"])
