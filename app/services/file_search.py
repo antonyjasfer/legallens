@@ -182,7 +182,7 @@ class FileSearchService:
 
             # Try primary model, fall back if 503/429 unavailable
             models_to_try = [model]
-            for candidate in ("gemini-2.5-flash", "gemini-3.1-flash-lite"):
+            for candidate in ("gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"):
                 if candidate not in models_to_try:
                     models_to_try.append(candidate)
 
@@ -196,10 +196,14 @@ class FileSearchService:
                         contents=[file_ref, prompt],
                         config=config,
                     )
+                    logger.info("Indexed document query handled successfully by model=%s", m)
                     break
                 except Exception as exc:
                     last_exc = exc
-                    logger.warning("Model %s failed: %s; trying fallback...", m, exc)
+                    code = getattr(exc, "code", None)
+                    logger.warning("Model %s failed (code=%s): %s; evaluating fallback...", m, code, type(exc).__name__)
+                    if code in (401, 403):
+                        break
                     time.sleep(1.0)
 
             if response is None:

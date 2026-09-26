@@ -40,8 +40,9 @@ def check_gemini() -> bool:
         client = gemini_svc.get_client()
         from google.genai import types
         models_to_try = [settings.gemini_model]
-        if settings.gemini_model != "gemini-2.5-flash":
-            models_to_try.append("gemini-2.5-flash")
+        for candidate in ("gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"):
+            if candidate not in models_to_try:
+                models_to_try.append(candidate)
 
         resp = None
         for m in models_to_try:
@@ -49,7 +50,10 @@ def check_gemini() -> bool:
                 resp = client.models.generate_content(
                     model=m,
                     contents="Reply exactly LEGALLENS_OK",
-                    config=types.GenerateContentConfig(max_output_tokens=10),
+                    config=types.GenerateContentConfig(
+                        max_output_tokens=50,
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
+                    ),
                 )
                 if resp and "LEGALLENS_OK" in (resp.text or ""):
                     format_status("Gemini", "PASS", f"model: {m}")

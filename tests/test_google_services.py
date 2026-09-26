@@ -71,17 +71,19 @@ class TestGCSService:
         mock_bucket.blob.return_value = mock_blob
         mock_client.bucket.return_value = mock_bucket
         gcs._client = mock_client
-
-        pdf_bytes = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
-        result = gcs.upload_document(
-            content=pdf_bytes,
-            original_filename="../../../evil_path.pdf",
-            session_id="sess-safe",
-            document_id="doc-unique-hash",
-        )
-        assert result["blob_path"] == "legal-documents/sess-safe/doc-unique-hash.pdf"
-        assert result["storage_backend"] == "gcs"
-        mock_bucket.blob.assert_called_once_with("legal-documents/sess-safe/doc-unique-hash.pdf")
+        try:
+            pdf_bytes = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
+            result = gcs.upload_document(
+                content=pdf_bytes,
+                original_filename="../../../evil_path.pdf",
+                session_id="sess-safe",
+                document_id="doc-unique-hash",
+            )
+            assert result["blob_path"] == "legal-documents/sess-safe/doc-unique-hash.pdf"
+            assert result["storage_backend"] == "gcs"
+            mock_bucket.blob.assert_called_once_with("legal-documents/sess-safe/doc-unique-hash.pdf")
+        finally:
+            gcs._client = None
 
     def test_cleanup_deletes_file_with_mock_gcs(self):
         gcs = GCSService.get_instance()
@@ -92,14 +94,16 @@ class TestGCSService:
         mock_bucket.blob.return_value = mock_blob
         mock_client.bucket.return_value = mock_bucket
         gcs._client = mock_client
-
-        deleted = gcs.delete_document(
-            blob_path="legal-documents/sess-del/doc-del.pdf",
-            session_id="sess-del",
-            document_id="doc-del",
-        )
-        assert deleted is True
-        mock_blob.delete.assert_called_once()
+        try:
+            deleted = gcs.delete_document(
+                blob_path="legal-documents/sess-del/doc-del.pdf",
+                session_id="sess-del",
+                document_id="doc-del",
+            )
+            assert deleted is True
+            mock_blob.delete.assert_called_once()
+        finally:
+            gcs._client = None
 
 
 # ---------------------------------------------------------------------------

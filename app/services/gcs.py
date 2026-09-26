@@ -48,6 +48,8 @@ class GCSService:
 
     @property
     def is_configured(self) -> bool:
+        if self._client is not None:
+            return True
         settings = get_settings()
         return bool(settings.gcs_bucket and settings.google_cloud_project)
 

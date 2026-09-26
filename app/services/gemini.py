@@ -85,7 +85,7 @@ class GeminiService:
         start_time = time.perf_counter()
         client = self.get_client()
         models_to_try = [settings.gemini_model]
-        for candidate in ("gemini-2.5-flash", "gemini-3.1-flash-lite"):
+        for candidate in ("gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"):
             if candidate not in models_to_try:
                 models_to_try.append(candidate)
 
@@ -108,6 +108,7 @@ class GeminiService:
                 )
                 if resp and resp.text:
                     used_model = m
+                    logger.info("Gemini health check succeeded using model=%s", m)
                     break
             except Exception as exc:
                 last_exc = exc
@@ -160,7 +161,7 @@ class GeminiService:
         config = types.GenerateContentConfig(**config_kwargs)
 
         models_to_try = [settings.gemini_model]
-        for candidate in ("gemini-2.5-flash", "gemini-3.1-flash-lite"):
+        for candidate in ("gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"):
             if candidate not in models_to_try:
                 models_to_try.append(candidate)
 
@@ -190,6 +191,7 @@ class GeminiService:
                         text = text[:-3]
                     text = text.strip()
 
+                    logger.info("Structured response generated successfully using model=%s", current_model)
                     return json.loads(text)
 
                 except GeminiNotConfiguredError:
@@ -210,6 +212,9 @@ class GeminiService:
                     # If quota exhausted (429) or persistent 503 on primary model, try next fallback model immediately
                     if status_code in (429, 503) and current_model != models_to_try[-1]:
                         logger.info("Switching to fallback model due to status %s on %s", status_code, current_model)
+                        break
+                    # If unauthorized or leaked key, do not silently try fallbacks
+                    if status_code in (401, 403):
                         break
                     if attempt < max_retries and status_code in (503, 429, 500):
                         await asyncio.sleep(1.5 * (attempt + 1))
@@ -233,7 +238,7 @@ class GeminiService:
         client = self.get_client()
 
         models_to_try = [settings.gemini_model]
-        for candidate in ("gemini-2.5-flash", "gemini-3.1-flash-lite"):
+        for candidate in ("gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"):
             if candidate not in models_to_try:
                 models_to_try.append(candidate)
 
@@ -256,12 +261,28 @@ class GeminiService:
                     ),
                 )
                 if response and response.text:
+                    logger.info("Search-grounded response generated successfully using model=%s", current_model)
                     break
             except GeminiNotConfiguredError:
                 raise
+            except (errors.ServerError, errors.ClientError) as exc:
+                last_exc = exc
+                status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+                logger.warning(
+                    "Google Search Grounding attempt on %s failed (status=%s): %s",
+                    current_model,
+                    status_code,
+                    type(exc).__name__,
+                )
+                if status_code in (401, 403):
+                    break
+                if status_code in (429, 503):
+                    continue
+                break
             except Exception as exc:
                 last_exc = exc
                 logger.warning("Google Search Grounding attempt on %s failed: %s", current_model, type(exc).__name__)
+                break
 
         if not response or not response.text:
             safe_msg = _sanitize_error_for_user(last_exc) if last_exc else "Google Search Grounding query failed."
