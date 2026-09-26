@@ -14,8 +14,10 @@ Tests cover:
 """
 
 import io
+from typing import Any
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import compute_file_hash, sanitize_filename, validate_pdf_magic
@@ -495,4 +497,26 @@ class TestVercelEntrypoint:
 
         assert vercel_app is not None
         assert vercel_app.title == "LegalLens"
+
+    @pytest.mark.asyncio
+    async def test_vercel_path_adapter_restores_rewritten_path(self):
+        """Verify VercelPathAdapter restores original path from x-matched-path header."""
+        from api.index import app as vercel_app
+
+        captured_scope: dict[str, Any] = {}
+
+        async def dummy_app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+            captured_scope.update(scope)
+
+        adapter = vercel_app.__class__(dummy_app)
+        scope = {
+            "type": "http",
+            "path": "/api/index",
+            "raw_path": b"/api/index",
+            "headers": [(b"x-matched-path", b"/api/health?query=1")],
+        }
+        await adapter(scope, None, None)
+        assert captured_scope["path"] == "/api/health"
+        assert captured_scope["raw_path"] == b"/api/health"
+
 
